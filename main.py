@@ -1,6 +1,5 @@
-def main():
-    print("Hello from tripmate-ai-a-multi-agent-travel-planner-with-langgraph!")
+from tools.tavily_tool import tavily_search
 
+res = tavily_search("Best hotels in yadagirigutta")
 
-if __name__ == "__main__":
-    main()
+print(res)
