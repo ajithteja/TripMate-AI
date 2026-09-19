@@ -1,0 +1,22 @@
+# Environments
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Git & IDE
+.git
+.gitignore
+.agents
+
+# Python cache
+__pycache__
+*.pyc
+
+# Secrets
+.env
+
+# Docs
+*.md
