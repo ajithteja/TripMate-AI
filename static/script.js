@@ -393,6 +393,92 @@
     state.activeId = localStorage.getItem(ACTIVE_KEY) || null;
   }
 
+  async function loadConversationsFromDB() {
+    try {
+      const res = await fetch("/api/conversations");
+      const data = await res.json();
+      if (!data.success || !Array.isArray(data.conversations)) return;
+
+      const dbConvos = data.conversations;
+      const localConvos = state.convos;
+
+      // Index local conversations by threadId for quick lookup
+      const localByThreadId = {};
+      localConvos.forEach((c) => {
+        if (c.threadId) localByThreadId[c.threadId] = c;
+      });
+
+      const merged = [];
+      const seenThreadIds = new Set();
+
+      // First pass: add DB conversations (they are the source of truth)
+      dbConvos.forEach((dbConv) => {
+        seenThreadIds.add(dbConv.thread_id);
+        const local = localByThreadId[dbConv.thread_id];
+
+        // Build messages from DB data
+        const messages = [];
+        if (dbConv.messages && dbConv.messages.length) {
+          dbConv.messages.forEach((m) => {
+            if (m.role === "human") {
+              messages.push({ role: "user", content: m.content });
+            } else if (m.role === "ai" && m.content) {
+              // Skip intermediate AI messages ("Flight results fetched.", etc.)
+              const skip = ["Flight results fetched.", "Hotel information fetched."];
+              const trimmed = m.content.trim();
+              if (!skip.includes(trimmed)) {
+                messages.push({
+                  role: "bot",
+                  data: {
+                    answer: m.content,
+                    flight_results: dbConv.flight_results || "",
+                    hotel_results: dbConv.hotel_results || "",
+                    itinerary: dbConv.itinerary || "",
+                    llm_calls: dbConv.llm_calls || 0,
+                  },
+                });
+              }
+            }
+          });
+        }
+
+        // Use the title from user_query
+        const title = dbConv.title || "New conversation";
+
+        // Parse the timestamp
+        let ts = Date.now();
+        if (dbConv.ts) {
+          const parsed = new Date(dbConv.ts);
+          if (!isNaN(parsed.getTime())) ts = parsed.getTime();
+        }
+
+        merged.push({
+          id: local ? local.id : "conv_" + dbConv.thread_id.replace(/[^a-zA-Z0-9]/g, ""),
+          title: local && local.title ? local.title : title,
+          threadId: dbConv.thread_id,
+          updatedAt: local ? local.updatedAt : ts,
+          messages: messages,
+        });
+      });
+
+      // Second pass: add any local-only conversations (no thread_id or not in DB)
+      localConvos.forEach((c) => {
+        if (!c.threadId || !seenThreadIds.has(c.threadId)) {
+          merged.push(c);
+        }
+      });
+
+      // Sort by updatedAt descending
+      merged.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+      state.convos = merged;
+      writeStore();
+      renderSidebar();
+    } catch (e) {
+      console.error("Failed to load conversations from DB:", e);
+    }
+  }
+
   function migrateLegacy() {
     try {
       const chat = JSON.parse(localStorage.getItem(LEGACY_CHAT_KEY) || "[]");
@@ -702,4 +788,14 @@
   renderSidebar();
   inputEl.focus();
   autoGrow();
+
+  // Load conversations from DB (overrides localStorage with server truth)
+  loadConversationsFromDB().then(() => {
+    // Re-render the active conversation after DB load
+    const afterActive = getActive();
+    if (afterActive) {
+      renderChat(afterActive);
+      renderSidebar();
+    }
+  });
 })();
