@@ -15,6 +15,12 @@ import psycopg
 from psycopg.rows import dict_row
 from langgraph.checkpoint.postgres import PostgresSaver
 
+
+
+# This is to allow nested event loops for async calls in FastAPI
+import nest_asyncio
+nest_asyncio.apply()
+
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(
